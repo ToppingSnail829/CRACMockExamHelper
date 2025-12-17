@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>业余无线电 A/B类 通用备考系统</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #2980b9; --success: #27ae60; --danger: #c0392b; --warning: #f39c12; --bg: #f0f2f5; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; background: var(--bg); }
+        
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; animation: fadeIn 0.4s ease; }
+        .hidden { display: none !important; }
+        h1, h2 { text-align: center; color: var(--primary); margin-top: 0; }
+        
+        /* 状态栏 */
+        .status-bar { display: flex; justify-content: space-between; align-items: center; background: #e8f4fd; padding: 10px 20px; border-radius: 8px; color: var(--accent); font-weight: bold; margin-bottom: 20px; }
+        .badge { background: var(--danger); color: white; padding: 2px 8px; border-radius: 10px; font-size: 0.85em; }
+
+        /* 等级选择器 */
+        .level-selector { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px; border: 1px solid #e9ecef; }
+        .level-selector select { padding: 8px 15px; font-size: 16px; border-radius: 4px; border: 1px solid #bdc3c7; outline: none; color: var(--primary); font-weight: bold; }
+
+        /* 粘贴区域 */
+        .paste-area { width: 100%; height: 120px; border: 2px dashed #bdc3c7; border-radius: 8px; padding: 15px; font-family: monospace; font-size: 12px; resize: vertical; box-sizing: border-box; transition: 0.3s; }
+        .paste-area:focus { border-color: var(--accent); outline: none; background: #fbfbfb; }
+        
+        /* 按钮 */
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; }
+        .btn { padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; color: white; transition: 0.2s; width: 100%; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; background: #bdc3c7 !important; }
+        .btn-primary { background: var(--accent); }
+        .btn-primary:hover { background: #1f6391; }
+        .btn-success { background: var(--success); }
+        .btn-danger { background: var(--danger); }
+        .btn-outline { background: transparent; border: 1px solid #ccc; color: #666; }
+        .btn-outline:hover { background: #f5f5f5; }
+
+        /* 题目卡片 */
+        .question-card { border-bottom: 1px solid #eee; padding: 20px 0; }
+        .q-header { display: flex; justify-content: space-between; color: #999; font-size: 0.9em; margin-bottom: 8px; }
+        .q-body { font-size: 1.15em; font-weight: bold; margin-bottom: 15px; }
+        .option-item { display: flex; align-items: flex-start; padding: 10px; margin-bottom: 5px; border-radius: 6px; cursor: pointer; transition: 0.2s; border: 1px solid transparent; }
+        .option-item:hover { background: #f8f9fa; border-color: #eee; }
+        .option-item input { margin-right: 12px; margin-top: 5px; transform: scale(1.2); }
+        
+        /* 结果 */
+        .result-score { font-size: 3em; font-weight: 800; text-align: center; margin: 20px 0; color: var(--primary); }
+        .pass { color: var(--success); }
+        .fail { color: var(--danger); }
+        .review-card { background: #fff5f5; border-left: 4px solid var(--danger); padding: 15px; margin-bottom: 15px; border-radius: 4px; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div class="container" id="page-setup">
+    <h1>业余无线电 模拟考试</h1>
+    
+    <div class="status-bar">
+        <span>当前题库状态</span>
+        <span id="db-status">未导入</span>
+    </div>
+
+    <div id="import-section">
+        <p style="text-align: center; color: #666; margin-bottom: 10px; font-size: 0.9em;">
+            支持 A类 / B类 题库(Ctrl+A 全选复制文本)
+        </p>
+        <textarea id="raw-text" class="paste-area" placeholder="在此处粘贴题库文本... ([I]MC1-001 [Q]题目...)"></textarea>
+        <button class="btn btn-success" onclick="parseText()" style="margin-top: 15px;">解析并保存题库</button>
+    </div>
+
+    <div id="menu-section" class="hidden">
+        <div class="level-selector">
+            <label for="level-select">选择考试等级：</label>
+            <select id="level-select" onchange="updateExamConfig()">
+                <option value="A">A类 (30题 / 25及格)</option>
+                <option value="B">B类 (50题 / 40及格)</option>
+            </select>
+        </div>
+
+        <div class="status-bar" style="background: #fff3cd; color: #856404;">
+            <span>历史错题本</span>
+            <span><span id="mistake-badge" class="badge">0</span> 题</span>
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="startExam('random')">开始模拟考试</button>
+            <button class="btn btn-danger" id="btn-mistake" onclick="startExam('mistake')" disabled>攻克错题</button>
+        </div>
+        <div style="text-align: center; margin-top: 20px;">
+            <button class="btn btn-outline" onclick="clearData()" style="width: auto; padding: 5px 15px; font-size: 0.8em;">清空数据</button>
+        </div>
+    </div>
+</div>
+
+<div class="container hidden" id="page-exam">
+    <div class="status-bar">
+        <span id="exam-mode-text">模拟考试</span>
+        <span>进度: <span id="q-current">1</span> / <span id="q-total">30</span></span>
+    </div>
+    <div id="quiz-box"></div>
+    <button class="btn btn-primary" onclick="submitExam()" style="margin-top: 20px;">提交试卷</button>
+    <button class="btn btn-outline" onclick="goHome()" style="margin-top: 10px;">放弃返回</button>
+</div>
+
+<div class="container hidden" id="page-result">
+    <h2>考试结果</h2>
+    <div id="score-display" class="result-score">0</div>
+    <p id="result-msg" style="text-align: center; font-weight: bold;"></p>
+    
+    <div id="wrong-list" style="margin-top: 30px;"></div>
+
+    <div class="btn-group">
+        <button class="btn btn-outline" onclick="goHome()">返回主页</button>
+        <button class="btn btn-primary" onclick="restartSame()">再来一次</button>
+    </div>
+</div>
+
+<script>
+    // --- 核心配置 ---
+    const CONFIG = {
+        'A': { total: 30, pass: 25, name: 'A类' },
+        'B': { total: 50, pass: 40, name: 'B类' }
+    };
+    let currentLevel = 'A'; // 默认为A类
+
+    // --- 数据变量 ---
+    let db = [];          
+    let mistakes = {};    
+    let currentPaper = [];
+    let currentMode = ''; 
+
+    // --- 初始化 ---
+    window.onload = () => {
+        loadData();
+        
+        // 恢复上次选择的等级
+        const savedLevel = localStorage.getItem('ham_level');
+        if(savedLevel && CONFIG[savedLevel]) {
+            document.getElementById('level-select').value = savedLevel;
+            updateExamConfig();
+        } else {
+            updateUI();
+        }
+    };
+
+    function updateExamConfig() {
+        currentLevel = document.getElementById('level-select').value;
+        localStorage.setItem('ham_level', currentLevel); // 记住选择
+        updateUI();
+    }
+
+    function loadData() {
+        const savedDB = localStorage.getItem('ham_db_text');
+        const savedMis = localStorage.getItem('ham_mistakes');
+        if (savedDB) db = JSON.parse(savedDB);
+        if (savedMis) mistakes = JSON.parse(savedMis);
+    }
+
+    function saveData() {
+        localStorage.setItem('ham_mistakes', JSON.stringify(mistakes));
+        if (db.length > 0) localStorage.setItem('ham_db_text', JSON.stringify(db));
+    }
+
+    function clearData() {
+        if(confirm('确定清空所有题库和错题记录吗？')) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+
+    // --- 解析逻辑 (通用) ---
+    function parseText() {
+        const raw = document.getElementById('raw-text').value;
+        if (raw.length < 100) return alert('内容太少，请先复制完整的题库文本！');
+
+        db = [];
+        let clean = raw.replace(/---\s*PAGE\s*\d+\s*---/gi, "").replace(/\[\s*([A-Z])\s*\]/g, "[$1]");
+        const blocks = clean.split("[I]");
+        
+        for (let i = 1; i < blocks.length; i++) {
+            let block = blocks[i];
+            let id = (block.match(/^([A-Z0-9\-]+)/) || [])[1];
+            let q  = (block.match(/\[Q\]([\s\S]*?)(?=\[|$)/) || [])[1];
+            let a  = (block.match(/\[T\]\s*([A-Z]+)/) || [])[1];
+            let opts = {};
+            ['A','B','C','D'].forEach(k => {
+                let reg = new RegExp(`\\[${k}\\]([\\s\\S]*?)(?=\\[|$)`);
+                let m = block.match(reg);
+                if(m) opts[k] = m[1].trim();
+            });
+
+            if (id && q && a && opts['A']) {
+                db.push({ id: id.trim(), q: q.trim().replace(/\n/g, ""), a: a.trim(), opts: opts });
+            }
+        }
+
+        if (db.length > 0) {
+            saveData();
+            updateUI();
+            alert(`成功导入 ${db.length} 道题目！\n\n提示：请确保你导入的题库（A类或B类）与你选择的考试等级一致。`);
+            document.getElementById('raw-text').value = "";
+        } else {
+            alert('解析失败，未识别到有效题目。');
+        }
+    }
+
+    function updateUI() {
+        const hasDB = db.length > 0;
+        const misCount = Object.keys(mistakes).length;
+
+        if (hasDB) {
+            document.getElementById('import-section').classList.add('hidden');
+            document.getElementById('menu-section').classList.remove('hidden');
+            document.getElementById('db-status').innerHTML = `已加载 (${db.length}题)`;
+            document.getElementById('db-status').style.color = 'var(--success)';
+        } else {
+            document.getElementById('import-section').classList.remove('hidden');
+            document.getElementById('menu-section').classList.add('hidden');
+        }
+
+        document.getElementById('mistake-badge').innerText = misCount;
+        const btnMis = document.getElementById('btn-mistake');
+        btnMis.disabled = misCount === 0;
+        btnMis.innerText = misCount > 0 ? `攻克错题 (${misCount})` : `暂无错题`;
+    }
+
+    // --- 考试逻辑 ---
+    function startExam(mode) {
+        currentMode = mode;
+        const config = CONFIG[currentLevel];
+        
+        if (mode === 'random') {
+            // 根据选择的等级（A=30, B=50）截取题目
+            currentPaper = shuffle(db).slice(0, config.total);
+            document.getElementById('exam-mode-text').innerText = `${config.name}模拟考`;
+        } else {
+            currentPaper = db.filter(item => mistakes[item.id]);
+            document.getElementById('exam-mode-text').innerText = "错题突击";
+        }
+
+        if (currentPaper.length === 0) return alert("当前题库为空或没有错题！");
+
+        document.getElementById('page-setup').classList.add('hidden');
+        document.getElementById('page-result').classList.add('hidden');
+        document.getElementById('page-exam').classList.remove('hidden');
+        renderPaper();
+    }
+
+    function renderPaper() {
+        const box = document.getElementById('quiz-box');
+        box.innerHTML = '';
+        document.getElementById('q-total').innerText = currentPaper.length;
+
+        currentPaper.forEach((item, idx) => {
+            let inputType = item.a.length > 1 ? 'checkbox' : 'radio';
+            let html = `
+                <div class="question-card">
+                    <div class="q-header">
+                        <span>${idx+1}. ID: ${item.id}</span>
+                        ${mistakes[item.id] ? '<span style="color:red">曾错 '+mistakes[item.id]+' 次</span>' : ''}
+                    </div>
+                    <div class="q-body">${item.q}</div>
+                    <div class="q-options">
+            `;
+            for (let key in item.opts) {
+                html += `
+                    <label class="option-item">
+                        <input type="${inputType}" name="q_${idx}" value="${key}">
+                        <span>${key}. ${item.opts[key]}</span>
+                    </label>
+                `;
+            }
+            html += `</div></div>`;
+            box.innerHTML += html;
+        });
+        window.scrollTo(0,0);
+    }
+
+    function submitExam() {
+        let score = 0;
+        let wrongList = [];
+        let correctIDs = [];
+
+        currentPaper.forEach((item, idx) => {
+            const inputs = document.querySelectorAll(`input[name="q_${idx}"]:checked`);
+            let userAns = Array.from(inputs).map(i => i.value).sort().join("");
+            let rightAns = item.a.split("").sort().join("");
+
+            if (userAns === rightAns) {
+                score++;
+                correctIDs.push(item.id);
+            } else {
+                wrongList.push({ q: item, user: userAns || "未作答" });
+                mistakes[item.id] = (mistakes[item.id] || 0) + 1;
+            }
+        });
+
+        if (currentMode === 'mistake') {
+            correctIDs.forEach(id => delete mistakes[id]);
+        }
+        
+        saveData();
+        showResult(score, wrongList);
+    }
+
+    function showResult(score, list) {
+        document.getElementById('page-exam').classList.add('hidden');
+        document.getElementById('page-result').classList.remove('hidden');
+
+        const config = CONFIG[currentLevel];
+        const scoreEl = document.getElementById('score-display');
+        const msgEl = document.getElementById('result-msg');
+        
+        scoreEl.innerText = score;
+        
+        if (currentMode === 'random') {
+            const isPass = score >= config.pass;
+            scoreEl.className = isPass ? 'result-score pass' : 'result-score fail';
+            msgEl.innerText = isPass 
+                ? `恭喜通过！ (及格线: ${config.pass})` 
+                : `还需努力！ (及格线: ${config.pass})`;
+        } else {
+            scoreEl.className = 'result-score';
+            msgEl.innerText = `本次消灭了 ${currentPaper.length - list.length} 道错题！`;
+        }
+
+        const listDiv = document.getElementById('wrong-list');
+        listDiv.innerHTML = list.length ? `<h3>错题解析</h3>` : `<div style="text-align:center;color:green;margin:20px">全对！完美！</div>`;
+        
+        list.forEach(w => {
+            listDiv.innerHTML += `
+                <div class="review-card">
+                    <div style="font-weight:bold;margin-bottom:5px">${w.q.q}</div>
+                    <div style="font-size:0.9em">
+                        <span style="color:var(--danger)">你的选择: ${w.user}</span> <br>
+                        <span style="color:var(--success)">正确答案: ${w.q.a}</span>
+                    </div>
+                    <div style="margin-top:8px;color:#666;font-size:0.85em;border-top:1px dashed #e74c3c;padding-top:5px">
+                        ${w.q.opts[w.q.a[0]]}...
+                    </div>
+                </div>
+            `;
+        });
+        window.scrollTo(0,0);
+    }
+
+    function goHome() {
+        updateUI();
+        document.getElementById('page-result').classList.add('hidden');
+        document.getElementById('page-exam').classList.add('hidden');
+        document.getElementById('page-setup').classList.remove('hidden');
+    }
+
+    function restartSame() {
+        startExam(currentMode);
+    }
+
+    function shuffle(array) {
+        let res = array.slice();
+        for (let i = res.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [res[i], res[j]] = [res[j], res[i]];
+        }
+        return res;
+    }
+</script>
+</body>
+</html>
